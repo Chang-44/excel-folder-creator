@@ -40,26 +40,13 @@ def render_template(template: str, value: str, seq: str, count: int,
     return TEMPLATE_FIELD_RE.sub(_replace, template)
 
 
-def expand_row_to_paths(
-    row: dict,
-    levels: list[LevelConfig],
-) -> tuple[list[list[str]], str]:
-    """
-    把一行按层级配置展开成多条路径。
-    返回 (paths, error_reason)
-    paths 例：[
-        ['石家庄', '1001', '1001-1', '水样'],
-        ['石家庄', '1001', '1001-2', '水样'],
-    ]
-    A1 规则：数量展开的序号层作为【下一级】插入，后续层级挂在展开层内部。
-    """
-    paths: list[list[str]] = [[]]
+def expand_row_to_paths(row, levels):
+    paths = [[]]
 
     for lv in levels:
         raw_value = row.get(lv.column, "")
         value = clean_name("" if raw_value is None else str(raw_value).strip())
 
-        # 空值层跳过
         if not value:
             continue
 
@@ -67,36 +54,41 @@ def expand_row_to_paths(
         if not ok:
             return [], f"列【{lv.column}】的值非法: {reason}"
 
-        # 本层要追加的"段"列表
-        # 无数量列 或 数量<=1且不加后缀 → 单段
-        # 有数量列 且 (数量>1 或 数量==1且加后缀) → [value, value-1, value-2...]
         count = parse_count(row.get(lv.count_column)) if lv.count_column else 0
         need_expand = lv.count_column and (
             count > 1 or (count == 1 and not lv.one_no_suffix)
         )
 
         if not need_expand:
-            new_segments = [value]
+            # 普通层：直接追加一段
+            new_paths = []
+            for p in paths:
+                new_paths.append(p + [value])
+            paths = new_paths
         else:
-            segments = [value]  # 主目录
+            # ★ 展开层：主目录 + 子目录是【嵌套】关系
+            # 对每条已有路径，生成：[..., value, value-1] / [..., value, value-2] / ...
+            children = []
             for i in range(lv.start, lv.start + count):
                 seq = str(i).zfill(lv.pad) if lv.pad > 0 else str(i)
                 child = clean_name(render_template(lv.template, value, seq, count, row))
                 if child and child != value:
-                    segments.append(child)
-            new_segments = segments
+                    children.append(child)
 
-        # 拼接：本层的每个段都要和已有所有路径组合
-        # 注意 A1 语义：展开层产生的多个段，是【并列的独立分支】
-        # 后续层级会分别挂到每个段下面
-        new_paths = []
-        for p in paths:
-            for seg in new_segments:
-                new_paths.append(p + [seg])
-        paths = new_paths
+            if not children:
+                # 数量异常时退化为只建主目录
+                new_paths = []
+                for p in paths:
+                    new_paths.append(p + [value])
+                paths = new_paths
+            else:
+                new_paths = []
+                for p in paths:
+                    for child in children:
+                        new_paths.append(p + [value, child])   # ★ 主目录 + 子目录
+                paths = new_paths
 
     return paths, ""
-
 
 def build_tasks(rows: list[dict], levels: list[LevelConfig]) -> list[FolderTask]:
     """把整表转成 FolderTask 列表"""
