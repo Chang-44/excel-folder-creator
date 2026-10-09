@@ -166,13 +166,18 @@ jobs:
             NAME=$(basename "$d")
             for f in "$d"*; do
               BASENAME=$(basename "$f")
-              EXT="${BASENAME##*.}"
-              if [ "$EXT" = "$BASENAME" ]; then
-                EXT=""
+              # 如果是 .app 目录，打包成 zip
+              if [ -d "$f" ] && [[ "$f" == *.app ]]; then
+                (cd "$d" && zip -r "../../release/Excel文件夹创建工具_${VERSION}_${NAME}.zip" "$BASENAME")
               else
-                EXT=".$EXT"
+                EXT="${BASENAME##*.}"
+                if [ "$EXT" = "$BASENAME" ]; then
+                  EXT=""
+                else
+                  EXT=".$EXT"
+                fi
+                cp -r "$f" "release/Excel文件夹创建工具_${VERSION}_${NAME}${EXT}"
               fi
-              cp "$f" "release/Excel文件夹创建工具_${VERSION}_${NAME}${EXT}"
             done
           done
           ls -lh release/
