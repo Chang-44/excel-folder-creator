@@ -1,0 +1,184 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:        # 支持手动触发
+
+jobs:
+  # ---------------- 测试 ----------------
+  test:
+    name: Test on ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Syntax check
+        run: |
+          python -m compileall core ui utils scripts main.py
+
+      - name: Generate sample data
+        run: python scripts/generate_sample.py
+
+      - name: Smoke test - import modules
+        run: |
+          python -c "from core.expander import build_tasks, merge_paths_into_tree; print('OK')"
+          python -c "from core.folder_creator import create_tree, rollback_tree; print('OK')"
+          python -c "from core.config_manager import load_config, save_config; print('OK')"
+
+      - name: Test core logic
+        run: |
+          python - <<'PY'
+          from core.models import LevelConfig
+          from core.expander import build_tasks, merge_paths_into_tree
+
+          levels = [
+              LevelConfig(column="地区"),
+              LevelConfig(column="样点号", count_column="样点数"),
+              LevelConfig(column="类型"),
+          ]
+          rows = [
+              {"地区": "石家庄", "样点号": "1001", "样点数": 3, "类型": "水样"},
+              {"地区": "石家庄", "样点号": "1002", "样点数": 1, "类型": "水样"},
+          ]
+          tasks = build_tasks(rows, levels)
+          assert len(tasks) == 2
+          assert len(tasks[0].paths) == 3, tasks[0].paths
+          assert tasks[0].paths[0] == ["石家庄", "1001", "1001-1", "水样"]
+          assert tasks[1].paths[0] == ["石家庄", "1002", "水样"]
+
+          tree = merge_paths_into_tree([p for t in tasks for p in t.paths])
+          assert "石家庄" in tree
+          assert "1001" in tree["石家庄"]
+          assert "1001-1" in tree["石家庄"]["1001"]
+          print("✅ Core logic test passed")
+          PY
+        shell: bash
+
+  # ---------------- 打包 ----------------
+  build:
+    name: Build on ${{ matrix.os }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+            ext: .exe
+          - os: macos-latest
+            artifact: macos
+            ext: ""
+          - os: ubuntu-latest
+            artifact: linux
+            ext: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller --noconfirm --clean `
+            --name "Excel文件夹创建工具" `
+            --windowed --onefile `
+            --collect-all ttkbootstrap `
+            --hidden-import openpyxl --hidden-import xlrd `
+            main.py
+
+      - name: Build with PyInstaller (macOS/Linux)
+        if: matrix.os != 'windows-latest'
+        run: |
+          pyinstaller --noconfirm --clean \
+            --name "Excel文件夹创建工具" \
+            --windowed --onefile \
+            --collect-all ttkbootstrap \
+            --hidden-import openpyxl --hidden-import xlrd \
+            main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: excel-folder-creator-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ---------------- 发布 Release ----------------
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show artifacts
+        run: find artifacts -type f
+
+      - name: Rename artifacts with version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p release
+          for d in artifacts/*/; do
+            NAME=$(basename "$d")
+            for f in "$d"*; do
+              BASENAME=$(basename "$f")
+              EXT="${BASENAME##*.}"
+              if [ "$EXT" = "$BASENAME" ]; then
+                EXT=""
+              else
+                EXT=".$EXT"
+              fi
+              cp "$f" "release/Excel文件夹创建工具_${VERSION}_${NAME}${EXT}"
+            done
+          done
+          ls -lh release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

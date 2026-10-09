@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# 打包
+build/
+dist/
+*.spec
+
+# 运行时生成
+config.json
+run.log
+samples/*.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
