@@ -13,6 +13,8 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: utf-8       # ← 加这一行
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +72,7 @@ jobs:
           assert "石家庄" in tree
           assert "1001" in tree["石家庄"]
           assert "1001-1" in tree["石家庄"]["1001"]
-          print("✅ Core logic test passed")
+          print("[OK] Core logic test passed")
           PY
         shell: bash
 

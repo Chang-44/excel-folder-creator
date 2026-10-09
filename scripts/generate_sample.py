@@ -1,10 +1,15 @@
 """
 示例数据生成脚本
 运行：python scripts/generate_sample.py
-生成：samples/示例数据.xlsx（含 3 个 Sheet，覆盖各种边界场景）
+生成：samples/示例数据.xlsx（含 4 个 Sheet，覆盖各种边界场景）
 """
-from pathlib import Path
 import sys
+import io
+from pathlib import Path
+
+# 强制 stdout 使用 UTF-8，避免 Windows 控制台编码报错
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # 允许直接运行
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -21,7 +26,7 @@ OUTPUT_FILE = SAMPLES_DIR / "示例数据.xlsx"
 
 
 def build_sheet_basic() -> pd.DataFrame:
-    """Sheet1：基础多级 + 数量展开（典型测绘场景）"""
+    """Sheet1：基础多级 + 数量展开"""
     return pd.DataFrame({
         "地区":   ["石家庄", "石家庄", "石家庄", "保定",   "保定",   "唐山"],
         "样点号": ["1001",   "1002",   "1003",   "2001",   "2002",   "3001"],
@@ -45,20 +50,18 @@ def build_sheet_edge_cases() -> pd.DataFrame:
     """Sheet3：边界情况大集合"""
     return pd.DataFrame({
         "名称": [
-            "正常名称",           # 正常
-            "  带空格  ",         # 首尾空格
-            "含/非法\\字符",      # 非法字符
-            "结尾有点.",          # 结尾点
-            "CON",                # Windows 保留字
-            "超长" + "啊" * 200,  # 超长
-            "",                   # 空值
-            None,                 # NaN
-            "1001",               # 纯数字
-            "emoji😀测试",        # emoji
+            "正常名称",
+            "  带空格  ",
+            "含/非法\\字符",
+            "结尾有点.",
+            "CON",
+            "超长" + "啊" * 200,
+            "",
+            None,
+            "1001",
+            "emoji测试",
         ],
-        "数量": [
-            3, 1, 2, 1, 0, 2, 1, 3, 1, 2,
-        ],
+        "数量": [3, 1, 2, 1, 0, 2, 1, 3, 1, 2],
         "备注": [
             "普通", "去空格", "字符替换", "去结尾点", "加_前缀",
             "截断", "跳过", "跳过", "正常", "正常",
@@ -87,12 +90,12 @@ def main():
         for name, df in sheets.items():
             df.to_excel(writer, sheet_name=name, index=False)
 
-    print(f"✅ 已生成: {OUTPUT_FILE}")
-    print(f"   共 {len(sheets)} 个 Sheet:")
+    print(f"[OK] 已生成: {OUTPUT_FILE}")
+    print(f"     共 {len(sheets)} 个 Sheet:")
     for name, df in sheets.items():
-        print(f"     - {name}（{len(df)} 行, {len(df.columns)} 列）")
+        print(f"       - {name} ({len(df)} 行, {len(df.columns)} 列)")
     print()
-    print("📌 使用建议：")
+    print("使用建议：")
     print("   1. 启动程序: python main.py")
     print("   2. 选择 Excel: samples/示例数据.xlsx")
     print("   3. 分别测试 4 个 Sheet 的效果")
